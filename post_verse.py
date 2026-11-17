@@ -15,6 +15,9 @@ TRANSLATION = "web"  # "web" = World English Bible, "kjv" = King James
 BOT_NAME = "Scripture Reading"
 EMBED_COLOR = 0x5865F2
 PROGRESS_FILE = "progress.json"
+EXPLANATIONS_FILE = "explanations.json"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
 
 # Genesis to Revelation: (book id, chapter count)
 BOOKS = [
@@ -42,6 +45,87 @@ def http_json(url, payload=None):
     with urllib.request.urlopen(req, timeout=30) as resp:
         body = resp.read().decode("utf-8")
         return json.loads(body) if body else None
+
+
+def call_gemini(prompt):
+    # Tries each model in GEMINI_MODELS until one answers. Returns the reply text or "".
+    body = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json", "maxOutputTokens": 16000},
+    }).encode("utf-8")
+    for model in GEMINI_MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            parts = data["candidates"][0]["content"]["parts"]
+            return "".join(p.get("text", "") for p in parts)
+        except Exception as e:
+            print(f"Gemini model {model} failed: {e}")
+    return ""
+
+
+def clean_sentence(sentence):
+    sentence = " ".join(str(sentence).split())
+    for dash in (" \u2014 ", "\u2014", " \u2013 "):
+        sentence = sentence.replace(dash, ", ")
+    return sentence
+
+
+def load_explanations():
+    if os.path.exists(EXPLANATIONS_FILE):
+        with open(EXPLANATIONS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_explanations(explanations):
+    with open(EXPLANATIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(explanations, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def explain_verse(chapter_data, verse):
+    # Gets one sentence per verse for the WHOLE chapter in a single free API call,
+    # saves them, and reuses them for the rest of the chapter. Returns "" if unavailable.
+    if not GEMINI_API_KEY:
+        return ""
+    key = f"{verse['book_id']} {verse['chapter']}"
+    cache = load_explanations()
+
+    if cache.get("chapter") != key or not cache.get("verses"):
+        lines = "\n".join(
+            f"{v['verse']}: {' '.join(v['text'].split())}" for v in chapter_data.get("verses", [])
+        )
+        prompt = (
+            f"Here is {verse['book']} chapter {verse['chapter']}, one verse per line:\n\n{lines}\n\n"
+            "For EVERY verse, write ONE short sentence (under 35 words) explaining its significance "
+            "in plain, encouraging language for a general Christian audience. Use the surrounding "
+            "verses for context when a verse is part of a story, list or genealogy. No em dashes, "
+            "do not quote the verse. Return ONLY a JSON object mapping each verse number (as a "
+            "string) to its sentence, like {\"1\": \"...\", \"2\": \"...\"}."
+        )
+        reply = call_gemini(prompt)
+        try:
+            start = reply.find("{")
+            end = reply.rfind("}")
+            verses = json.loads(reply[start:end + 1])
+            verses = {str(k): clean_sentence(v) for k, v in verses.items() if str(v).strip()}
+        except Exception as e:
+            print(f"Could not read explanations: {e}")
+            return ""
+        if not verses:
+            return ""
+        cache = {"chapter": key, "verses": verses}
+        save_explanations(cache)
+
+    return cache["verses"].get(str(verse["verse"]), "")
 
 
 def load_progress():
@@ -85,7 +169,7 @@ def find_next_verse(progress):
             verse = min(match, key=lambda v: int(v["verse"]))
             translation = chapter.get("translation", {})
             name = translation.get("name", "") if isinstance(translation, dict) else str(translation)
-            return verse, name
+            return verse, name, chapter
         next_chapter(progress)
     sys.exit("Could not find the next verse.")
 
@@ -102,17 +186,22 @@ def main():
         return
 
     progress = load_progress()
-    verse, translation_name = find_next_verse(progress)
+    verse, translation_name, chapter_data = find_next_verse(progress)
 
     reference = f"{verse['book']} {verse['chapter']}:{verse['verse']}"
     text = " ".join(verse["text"].split())
     count = progress.get("count", 0) + 1
+    explanation = explain_verse(chapter_data, verse)
+
+    description = text
+    if explanation:
+        description = f"{text}\n\n💡 *{explanation}*"
 
     message = {
         "username": BOT_NAME,
         "embeds": [{
             "title": f"📖 {reference}",
-            "description": text,
+            "description": description,
             "color": EMBED_COLOR,
             "footer": {"text": f"{translation_name} • Verse #{count:,}"},
         }],
