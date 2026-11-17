@@ -8,9 +8,9 @@ from zoneinfo import ZoneInfo
 
 # ===== SETTINGS =====
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
-TIMEZONE = "America/Los_Angeles"
-START_HOUR = 7    # first post at 7:00 AM
-END_HOUR = 22     # last posts during the 10 PM hour (10:00, 10:15, 10:30, 10:45)
+TIMEZONE = "America/New_York"
+START_HOUR = 5    # first post at 5:00 AM Eastern
+END_HOUR = 21     # last post at 9:00 PM Eastern
 TRANSLATION = "web"  # "web" = World English Bible, "kjv" = King James
 BOT_NAME = "Scripture Reading"
 EMBED_COLOR = 0x5865F2
@@ -181,7 +181,8 @@ def main():
     now = datetime.now(ZoneInfo(TIMEZONE))
     force = os.environ.get("FORCE_POST", "").lower() == "true"
 
-    if not force and not (START_HOUR <= now.hour <= END_HOUR):
+    in_hours = START_HOUR <= now.hour < END_HOUR or (now.hour == END_HOUR and now.minute < 15)
+    if not force and not in_hours:
         print(f"{now:%I:%M %p} is outside posting hours. Skipping.")
         return
 
