@@ -1,9 +1,12 @@
 name: Scripture Reading
 
 on:
-  schedule:
-    - cron: "2,17,32,47 * * * *"
-  workflow_dispatch:
+  workflow_dispatch:  # triggered every 15 min by cron-job.org
+    inputs:
+      force:
+        description: "Post now even outside 7 AM to 10:45 PM Pacific"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -23,7 +26,7 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          FORCE_POST: ${{ github.event_name == 'workflow_dispatch' }}
+          FORCE_POST: ${{ inputs.force }}
 
       - name: Save reading progress
         run: |
