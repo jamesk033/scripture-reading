@@ -181,7 +181,7 @@ def main():
     now = datetime.now(ZoneInfo(TIMEZONE))
     force = os.environ.get("FORCE_POST", "").lower() == "true"
 
-    in_hours = START_HOUR <= now.hour < END_HOUR or (now.hour == END_HOUR and now.minute < 15)
+    in_hours = START_HOUR <= now.hour < END_HOUR or (now.hour == END_HOUR and now.minute < 10)
     if not force and not in_hours:
         print(f"{now:%I:%M %p} is outside posting hours. Skipping.")
         return
