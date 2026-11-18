@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 # ===== SETTINGS =====
 WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
 TIMEZONE = "America/New_York"
-START_HOUR = 5    # first post at 5:00 AM Eastern
-END_HOUR = 21     # last post at 9:00 PM Eastern
+START_HOUR = 7    # first post at 7:00 AM Eastern
+END_HOUR = 19     # last post at 7:00 PM Eastern
 TRANSLATION = "web"  # "web" = World English Bible, "kjv" = King James
 BOT_NAME = "Scripture Reading"
 EMBED_COLOR = 0x5865F2
